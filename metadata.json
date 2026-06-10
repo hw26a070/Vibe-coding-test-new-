@@ -1,0 +1,6 @@
+{
+  "name": "スライド勇者タワー",
+  "description": "スカスカの盤面に道パネルを嵌め込んで勇者の通り道をリアルタイムに繋ぎ、鍛冶屋や道具屋でパワーアップして、盤面上の指名手配魔物と力比べをするガイド付きパズルRPG。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
