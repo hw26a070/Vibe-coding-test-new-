@@ -9,12 +9,13 @@ export interface Tile {
   id: string;
   type: 'road' | 'empty';
   connections: Direction[];
-  specialty: 'none' | 'forge' | 'shop' | 'chest' | 'dojo' | 'enemy' | 'fountain';
+  specialty: 'none' | 'forge' | 'shop' | 'chest' | 'dojo' | 'enemy' | 'fountain' | 'poison';
   specialtyVisited: boolean;
-  specialtyValue: number; // Value of buff or enemy strength
-  specialtyName?: string;  // Name of weapon, item, or enemy
+  specialtyValue: number; // Value of buff or enemy strength/debuff
+  specialtyName?: string;  // Name of weapon, item, or enemy/trap
   originalIndex: number;  // For design pattern variation
   isStatic?: boolean;     // Preset static tiles (enemies and weapons preplaced)
+  patternId?: string;     // To return to inventory on removal
 }
 
 export interface PlayerHero {
@@ -50,6 +51,7 @@ export interface Stage {
     value: number;
     count: number;
   }[];
+  panelInventory?: Record<string, number>; // Maps path pattern IDs to allowed placement limits
 }
 
 export interface GameSettings {

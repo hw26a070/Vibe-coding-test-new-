@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { STAGES } from './data/stages';
-import { Tile, PlayerHero, GameSettings } from './types';
+import { Tile, PlayerHero, GameSettings, Direction } from './types';
 import { 
   generateBoardTiles, 
   getTileExitDirection, 
@@ -59,9 +59,23 @@ export default function App() {
   // 2. Play Board grid and Hero state
   const [tiles, setTiles] = useState<Tile[]>([]);
   
-  // Hand deck of 4 road panels
-  const [handTiles, setHandTiles] = useState<PathPattern[]>([]);
-  const [selectedHandIndex, setSelectedHandIndex] = useState<number>(0);
+  // Panel limits resource stock system
+  const [panelStock, setPanelStock] = useState<Record<string, number>>({});
+  const [selectedPatternId, setSelectedPatternId] = useState<string>('h-straight');
+  const [rotatedConnections, setRotatedConnections] = useState<Record<string, Direction[]>>({});
+
+  // Carry Over stats from previous stage clear for continuous growth
+  const [carryOverPower, setCarryOverPower] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('path_hero_carry_power');
+      return saved ? parseInt(saved, 10) : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  // Remember current stage's specific base starting power for resetting/retrying correctly
+  const [stageStartPower, setStageStartPower] = useState<number>(10);
 
   // General Hero Details
   const [hero, setHero] = useState<PlayerHero>({
@@ -101,22 +115,46 @@ export default function App() {
     const generated = generateBoardTiles(stg);
     setTiles(generated);
     
-    // Scramble Hand Deck of 4 road options
-    const initialHand = Array.from({ length: 4 }, () => getRandomPathPattern());
-    setHandTiles(initialHand);
-    setSelectedHandIndex(0);
+    // Copy stage preset panel inventory limits
+    const initialLimits = stg.panelInventory ? { ...stg.panelInventory } : {
+      'h-straight': 5,
+      'v-straight': 5,
+      'curve-ne': 3,
+      'curve-es': 3,
+      'curve-sw': 3,
+      'curve-wn': 3
+    };
+    setPanelStock(initialLimits);
+    
+    // Reset all rotations back to default template orientations
+    const defaultRotations: Record<string, Direction[]> = {};
+    PATH_PATTERNS.forEach(p => {
+      defaultRotations[p.id] = [...p.connections];
+    });
+    setRotatedConnections(defaultRotations);
+    
+    // Set the default selected hand pattern to whatever is in stock (or h-straight)
+    const availableKey = Object.keys(initialLimits).find(k => initialLimits[k] > 0) || 'h-straight';
+    setSelectedPatternId(availableKey);
+
+    // Dynamic carry over initial power calculation
+    const startPower = carryOverPower > 0 ? carryOverPower : stg.initialHeroPower;
+    setStageStartPower(startPower);
 
     // Clear logs and float alerts
     setBattleLog([
       `[BATTLE] 【${stg.name}】へ進入しました！`,
-      `[HERO] 勇者がスタートに転送されました。戦力を集めて、すべての指名手配魔物を討伐せよ！`
+      carryOverPower > 0 
+        ? `[GROWTH] 前の冒険からステータスを引き継ぎました！ 基礎戦闘力【POW: ${carryOverPower}】`
+        : `[HERO] 初期戦闘力【POW: ${stg.initialHeroPower}】で出撃します。`,
+      `[INSTRUCTION] 盤面に残されている「お邪魔な毒の沼地」を完璧に回避するルートを構築しよう！`
     ]);
     setFloatingTexts([]);
 
     // Set Hero back to Castle Docked position
     setHero({
-      power: stg.initialHeroPower,
-      maxPower: stg.initialHeroPower,
+      power: startPower,
+      maxPower: startPower,
       level: 1,
       weapon: 'ひのきの棒',
       shield: '布の服',
@@ -160,10 +198,10 @@ export default function App() {
   const handleResetStage = () => {
     soundEffects.playSlide();
     
-    // Set Hero stats back to start
+    // Set Hero stats back to start taking carry-over state correctly
     setHero({
-      power: activeStage.initialHeroPower,
-      maxPower: activeStage.initialHeroPower,
+      power: stageStartPower,
+      maxPower: stageStartPower,
       level: 1,
       weapon: 'ひのきの棒',
       shield: '布の服',
@@ -180,6 +218,7 @@ export default function App() {
     setTiles(prev => prev.map(tile => ({ ...tile, specialtyVisited: false })));
     setBattleLog(prev => [
       `[RESET] 勇者が最初から（城門前）やり直します！`,
+      `[STATS] 今回の挑戦開始時ステータス【POW: ${stageStartPower}】を保持します！`,
       `[BUILD] 盤面に置いた道路の設置状況はそのまま引き継がれます！`
     ]);
   };
@@ -209,32 +248,41 @@ export default function App() {
   const handlePlaceTile = (gridIndex: number) => {
     if (tiles[gridIndex].type !== 'empty') return; // Must be empty slot
 
-    const chosenPattern = handTiles[selectedHandIndex];
+    // Check inventory stock limits
+    const currentStock = panelStock[selectedPatternId] || 0;
+    if (currentStock <= 0) {
+      soundEffects.playBlocked();
+      addFloatingText("在庫なし [EMPTY]", Math.floor(gridIndex / activeStage.gridSize), gridIndex % activeStage.gridSize, "text-red-400 border-red-500 bg-red-950/20");
+      setBattleLog(prev => [...prev, `[LIMIT] 在庫切れのため、選択したパネルを配置できません！他の種類をお選びください。`]);
+      return;
+    }
+
+    const chosenPattern = PATH_PATTERNS.find(p => p.id === selectedPatternId);
     if (!chosenPattern) return;
 
     soundEffects.playSlide();
+
+    // Consume 1 stock
+    setPanelStock(prev => ({
+      ...prev,
+      [selectedPatternId]: Math.max(0, currentStock - 1)
+    }));
 
     // Spawn new road tile
     const newRoadTile: Tile = {
       id: `tile_${currentStageId}_placed_${Date.now()}_${Math.random()}`,
       type: 'road',
-      connections: [...chosenPattern.connections],
+      connections: [...(rotatedConnections[selectedPatternId] || chosenPattern.connections)],
       specialty: 'none',
       specialtyVisited: false,
       specialtyValue: 0,
-      originalIndex: gridIndex
+      originalIndex: gridIndex,
+      patternId: selectedPatternId
     };
 
     setTiles(prev => {
       const next = [...prev];
       next[gridIndex] = newRoadTile;
-      return next;
-    });
-
-    // Replenish used hand slot with a brand new random pattern
-    setHandTiles(prev => {
-      const next = [...prev];
-      next[selectedHandIndex] = getRandomPathPattern();
       return next;
     });
 
@@ -293,6 +341,14 @@ export default function App() {
     }
 
     soundEffects.playSlide();
+
+    // Reclaim 1 stock back if it has an origin pattern ID
+    if (tile.patternId) {
+      setPanelStock(prev => ({
+        ...prev,
+        [tile.patternId!]: (prev[tile.patternId!] || 0) + 1
+      }));
+    }
 
     setTiles(prev => {
       const next = [...prev];
@@ -422,12 +478,20 @@ export default function App() {
                       setBattleLog(p => [
                         ...p,
                         `=== 【ステージクリア！！】 ===`,
-                        `盤面上の全指名手配魔物をすべて討伐完了しました！素晴らしい頭脳プレイです！`
+                        `盤面上の全指名手配魔物をすべて討伐完了しました！素晴らしい頭脳プレイです！`,
+                        `[GROWTH] クリア時の最終戦闘力【POW: ${updatedPower}】が次のステージへ引き継がれます！`
                       ]);
                       markStageCompleted(currentStageId);
-                      setHero(h => ({ ...h, status: 'victory' }));
+                      
+                      // Save carry-over power for dynamic status retention
+                      setCarryOverPower(updatedPower);
+                      try {
+                        localStorage.setItem('path_hero_carry_power', updatedPower.toString());
+                      } catch (e) {}
+
+                      setHero(h => ({ ...h, status: 'victory', power: updatedPower }));
                       setTimeout(() => {
-                        alert(`[SUCCESS] ステージクリア！！\n【${activeStage.name}】のすべてのモンスターを倒し、完全制覇を達成しました！`);
+                        alert(`[SUCCESS] ステージクリア！！\n【${activeStage.name}】のすべてのモンスターを倒し、完全制覇を達成しました！\n引き継ぎ戦闘力 [POW: ${updatedPower}] を持って次のステージへ進みましょう！`);
                       }, 200);
                     }
 
@@ -475,7 +539,29 @@ export default function App() {
                   return nextBoard;
                 });
 
-                if (currentTile.specialty === 'dojo' || currentTile.specialty === 'fountain') {
+                if (currentTile.specialty === 'poison') {
+                  // Poison de-buff (flat subtraction if value < 0, or percent multiplier if 0 < value < 1)
+                  if (specVal < 0) {
+                    updatedPower = Math.max(1, updatedPower + specVal);
+                    logMsg = `毒沼ダメ! ${specVal}`;
+                    colorTheme = 'text-purple-400 border-purple-500 bg-purple-950/20 border-purple-500/10 font-bold animate-shake';
+                    soundEffects.playBlocked();
+                    setBattleLog(prev => [
+                      ...prev,
+                      `[TRAP] ☠【毒の沼地】を通過。猛毒が染み渡り、戦闘力が ${specVal} 低下！（現在：[POW] ${updatedPower}）`
+                    ]);
+                  } else {
+                    const pct = Math.round((1 - specVal) * 100);
+                    updatedPower = Math.max(1, Math.round(updatedPower * specVal));
+                    logMsg = `猛毒侵食! -${pct}%`;
+                    colorTheme = 'text-purple-400 border-purple-500 bg-purple-950/20 border-purple-500/10 font-bold animate-shake';
+                    soundEffects.playBlocked();
+                    setBattleLog(prev => [
+                      ...prev,
+                      `[TRAP] ☠【毒の沼地】に侵入。全体の ${pct}% (${specVal}倍) の体力が瞬時に削がれました！（現在：[POW] ${updatedPower}）`
+                    ]);
+                  }
+                } else if (currentTile.specialty === 'dojo' || currentTile.specialty === 'fountain') {
                   // Multipliers
                   updatedPower = Math.round(updatedPower * specVal);
                   updatedLevel += 1;
@@ -597,8 +683,8 @@ export default function App() {
 
   // Fast getter of active connection list of the selected hand tile
   const activeHandConnections = useMemo(() => {
-    return handTiles[selectedHandIndex]?.connections || null;
-  }, [handTiles, selectedHandIndex]);
+    return rotatedConnections[selectedPatternId] || null;
+  }, [rotatedConnections, selectedPatternId]);
 
   return (
     <div className="min-h-screen bg-black text-[#e0e0e0] flex flex-col font-sans select-none pb-2">
@@ -733,55 +819,59 @@ export default function App() {
               />
             </div>
 
-            {/* HAND OF ROAD TILES DECK */}
+            {/* ROAD PANELS STORAGE INVENTORY */}
             <div id="path-pieces-hand" className="nes-panel p-2 text-[#e0e0e0] flex flex-col gap-1.5">
               <div className="flex justify-between items-center border-b border-zinc-800 pb-1">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[6.5px] bg-[#ffb800] text-black px-1.5 py-0.5 font-press font-extrabold">HAND</span>
+                  <span className="text-[6.5px] bg-[#ffb800] text-black px-1.5 py-0.5 font-press font-extrabold">DEPOT</span>
                   <span className="font-press font-bold text-[8px] text-[#ffb800] flex items-center gap-1">
-                    <span>置きたい道をクリック ⇒ 盤面をタップ (もう一度クリックで手札回転)</span>
+                    <span>資材倉庫：使いたい道を選択 ⇒ 盤面タップで設置（選択中タップで回転）</span>
                   </span>
                 </div>
-                <span className="text-[7px] text-zinc-500 font-press">DECK</span>
+                <span className="text-[7px] text-zinc-500 font-press">STOCKS</span>
               </div>
+              
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                {PATH_PATTERNS.map((pattern) => {
+                  const isSelected = selectedPatternId === pattern.id;
+                  const stock = panelStock[pattern.id] || 0;
+                  const isOutOfStock = stock <= 0;
+                  const currentConns = rotatedConnections[pattern.id] || pattern.connections;
 
-              <div className="grid grid-cols-4 gap-2">
-                {handTiles.map((pattern, idx) => {
-                  const isSelected = selectedHandIndex === idx;
-                  
                   return (
                     <motion.div
-                      key={`hand-${idx}-${pattern.id}-${currentStageId}`}
+                      key={`depot-${pattern.id}-${currentStageId}`}
                       onClick={() => {
+                        if (isOutOfStock) {
+                          soundEffects.playBlocked();
+                          return;
+                        }
                         if (isSelected) {
-                          // Rotate card connections within our hand immediately!
-                          setHandTiles(prev => {
-                            const next = [...prev];
-                            next[idx] = {
-                              ...next[idx],
-                              connections: rotateConnections(next[idx].connections),
-                              label: next[idx].label.includes('[TURN]') ? next[idx].label : `${next[idx].label} [TURN]`
-                            };
-                            return next;
-                          });
+                          // Rotate the selected warehouse archetype immediately clockwise
+                          setRotatedConnections(prev => ({
+                            ...prev,
+                            [pattern.id]: rotateConnections(prev[pattern.id] || [])
+                          }));
                           soundEffects.playSlide();
                         } else {
-                          setSelectedHandIndex(idx);
+                          setSelectedPatternId(pattern.id);
                           soundEffects.playStep();
                         }
                       }}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className={`relative p-1 rounded-none border transition-all bg-black min-h-[56px] flex items-center justify-between gap-1.5 ${
-                        isSelected 
-                          ? 'border-[#ffb800] ring-1 ring-white bg-[#0a0701]' 
-                          : 'border-zinc-800 hover:border-zinc-550'
+                      whileHover={isOutOfStock ? {} : { scale: 1.02 }}
+                      whileTap={isOutOfStock ? {} : { scale: 0.98 }}
+                      className={`relative p-1 rounded-none border transition-all bg-black flex flex-col items-center justify-between gap-1 cursor-pointer select-none ${
+                        isOutOfStock 
+                          ? 'border-zinc-900 bg-neutral-950/60 opacity-30 cursor-not-allowed'
+                          : isSelected 
+                            ? 'border-[#ffb800] ring-1 ring-white bg-[#0e0a02]' 
+                            : 'border-zinc-800 hover:border-zinc-600 bg-neutral-950 hover:bg-neutral-900'
                       }`}
                     >
-                      {/* Miniature SVG Representation */}
-                      <div className="relative w-8 h-8 border border-zinc-800 bg-black overflow-hidden shrink-0">
+                      {/* Miniature SVG Representation with Orientation simulation */}
+                      <div className="relative w-7 h-7 border border-zinc-800 bg-black overflow-hidden shrink-0 mt-0.5">
                         <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
-                          {pattern.connections.map((dir, sIdx) => {
+                          {currentConns.map((dir, sIdx) => {
                             let pathD = '';
                             if (dir === 'N') pathD = 'M 50,0 L 50,50';
                             if (dir === 'S') pathD = 'M 50,50 L 50,100';
@@ -789,7 +879,7 @@ export default function App() {
                             if (dir === 'W') pathD = 'M 0,50 L 50,50';
                             return (
                               <path
-                                key={`mini-${dir}-${sIdx}`}
+                                key={`depot-mini-${dir}-${sIdx}`}
                                 d={pathD}
                                 stroke={isSelected ? "#ffb800" : "#444"}
                                 strokeWidth="28"
@@ -797,7 +887,7 @@ export default function App() {
                               />
                             );
                           })}
-                          {pattern.connections.map((dir, sIdx) => {
+                          {currentConns.map((dir, sIdx) => {
                             let pathD = '';
                             if (dir === 'N') pathD = 'M 50,0 L 50,50';
                             if (dir === 'S') pathD = 'M 50,50 L 50,100';
@@ -805,7 +895,7 @@ export default function App() {
                             if (dir === 'W') pathD = 'M 0,50 L 50,50';
                             return (
                               <path
-                                key={`mini-p-${dir}-${sIdx}`}
+                                key={`depot-mini-p-${dir}-${sIdx}`}
                                 d={pathD}
                                 stroke={isSelected ? "#ffffff" : "#777"}
                                 strokeWidth="8"
@@ -813,23 +903,30 @@ export default function App() {
                               />
                             );
                           })}
-                          {pattern.connections.length > 0 && (
+                          {currentConns.length > 0 && (
                             <rect x="42" y="42" width="16" height="16" fill={isSelected ? "#ffb800" : "#111"} stroke="#000" strokeWidth="2" />
                           )}
                         </svg>
                       </div>
 
-                      <div className="flex flex-col text-left justify-center flex-1 min-w-0 pr-1">
-                        <span className="text-[7.5px] font-mono font-bold text-gray-300 truncate tracking-tighter">
+                      <div className="flex flex-col text-center w-full mt-1">
+                        <span className="text-[6.5px] font-mono font-bold text-gray-300 truncate tracking-tight">
                           {pattern.label.replace(' Connection', '')}
                         </span>
-                        <span className="text-[6.5px] font-mono text-zinc-500 tracking-tighter">
-                          [{pattern.connections.join('')}]
-                        </span>
+                        
+                        {/* Stock Counter Meter */}
+                        <div className="mt-0.5 py-0.5 px-1 bg-zinc-900/80 border border-zinc-850 flex items-center justify-center gap-1">
+                          <span className="text-[5.5px] text-zinc-500 font-press">Qty</span>
+                          <span className={`text-[6.5px] font-mono font-bold ${
+                            isOutOfStock ? 'text-red-500' : stock <= 1 ? 'text-amber-400' : 'text-emerald-400'
+                          }`}>
+                            {stock}
+                          </span>
+                        </div>
                       </div>
 
-                      {isSelected && (
-                        <span className="absolute -top-1.5 -right-0.5 text-[5px] text-black font-press bg-[#ffb800] px-1 py-0.5 border border-white font-bold uppercase whitespace-nowrap">
+                      {isSelected && !isOutOfStock && (
+                        <span className="absolute -top-1.5 -right-0.5 text-[4.5px] text-black font-press bg-[#ffb800] px-1 py-0.5 border border-white font-extrabold uppercase scale-90">
                           HOLD
                         </span>
                       )}

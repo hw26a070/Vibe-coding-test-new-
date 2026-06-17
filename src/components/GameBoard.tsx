@@ -32,6 +32,7 @@ const specialtyColors: Record<Tile['specialty'], { bg: string; border: string; t
   dojo: { bg: 'bg-[#021c0b] border-2', border: 'border-emerald-500', text: 'text-emerald-400', icon: Flame },
   enemy: { bg: 'bg-[#2a0408] border-4', border: 'border-red-600', text: 'text-red-500', icon: ShieldCheck },
   fountain: { bg: 'bg-[#02171c] border-2', border: 'border-cyan-500', text: 'text-cyan-400', icon: Sparkles },
+  poison: { bg: 'bg-[#22022d] border-2', border: 'border-purple-500', text: 'text-purple-400', icon: Trash2 },
 };
 
 export const GameBoard: React.FC<GameBoardProps> = ({
