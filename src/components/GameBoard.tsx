@@ -9,6 +9,7 @@ import { rotateConnections, getTileExitDirection, getOppositeDirection } from '.
 import { Castle, Flame, Sword, Sparkles, ShoppingBag, ShieldCheck, Trophy, HelpCircle, RotateCw, Trash2, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PixelIcon } from './PixelIcons';
+import heroAvatarImg from '../../public/Gemini_Generated_Image_lxmep7lxmep7lxme.png';
 
 interface GameBoardProps {
   tiles: Tile[];
@@ -502,7 +503,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               left: 0
             }}
           >
-            <div className={`relative w-full h-full rounded-none flex items-center justify-center border-4 transition-transform duration-300 shadow-xl ${
+            <div className={`relative w-full h-full rounded-none flex flex-col border-[2px] transition-transform duration-300 shadow-xl overflow-hidden ${
               hero.status === 'blocked' 
                 ? 'bg-amber-950 border-[#ffb800]' 
                 : hero.status === 'defeated'
@@ -511,27 +512,37 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 ? 'bg-emerald-950 border-emerald-400'
                 : 'bg-black border-white'
             }`}>
-              <Shield size={Math.max(12, tileWidth * 0.22)} className="text-white fill-[#ffb800]" />
+              {/* Upper Section: Hero Character Portrait */}
+              <div className="flex-1 w-full relative overflow-hidden bg-black min-h-0">
+                <img 
+                  src={heroAvatarImg} 
+                  alt="Hero Avatar" 
+                  className="w-full h-full object-cover" 
+                  referrerPolicy="no-referrer"
+                />
 
-              {/* Sweat drop popup */}
-              {hero.status === 'blocked' && (
-                <div className="absolute -top-6 px-1.5 py-0.5 bg-black border border-white text-white font-press text-[6px] whitespace-nowrap">
-                  LOST?
-                </div>
-              )}
+                {/* Sweat drop popup within the portrait container */}
+                {hero.status === 'blocked' && (
+                  <div className="absolute top-0.5 left-1/2 -translate-x-1/2 px-1 py-0.5 bg-black border border-[#ffb800] text-[#ffb800] font-press text-[5px] whitespace-nowrap leading-none scale-90">
+                    LOST?
+                  </div>
+                )}
+              </div>
 
-              {/* Sparkle if walking */}
+              {/* Lower Section: Integrated Level Power Banner */}
+              <div className="h-3 sm:h-3.5 bg-neutral-950 border-t border-zinc-900 w-full flex items-center justify-center shrink-0">
+                <span className="text-[6.5px] sm:text-[7.5px] font-press font-black text-[#ffb800] leading-none">
+                  {hero.power}
+                </span>
+              </div>
+
+              {/* Sparkle Indicator for walking */}
               {hero.status === 'walking' && (
-                <span className="absolute -bottom-1 -right-1 flex h-2.5 w-2.5">
+                <span className="absolute top-1 right-1 flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-none bg-[#ffb800] opacity-75"></span>
-                  <span className="relative inline-flex rounded-none h-2.5 w-2.5 bg-[#ffb800]"></span>
+                  <span className="relative inline-flex rounded-none h-2 w-2 bg-[#ffb800]"></span>
                 </span>
               )}
-            </div>
-
-            {/* Float Power HUD */}
-            <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-black border-2 border-white rounded-none px-1 py-0.5 text-center shadow whitespace-nowrap">
-              <span className="text-[7px] font-press font-bold text-[#ffb800]">{hero.power}</span>
             </div>
           </motion.div>
         </div>

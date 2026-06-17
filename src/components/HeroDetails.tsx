@@ -7,6 +7,7 @@ import React from 'react';
 import { PlayerHero, GameSettings } from '../types';
 import { Shield, Sword, Heart, Volume2, VolumeX, Eye, Play, Square, FastForward, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import heroAvatarImg from '../../public/Gemini_Generated_Image_lxmep7lxmep7lxme.png';
 
 interface HeroDetailsProps {
   hero: PlayerHero;
@@ -80,7 +81,12 @@ export const HeroDetails: React.FC<HeroDetailsProps> = ({
         {/* Section A: Hero Stats & Gear */}
         <div className="md:col-span-5 flex items-center justify-between sm:justify-start gap-3 border-b md:border-b-0 md:border-r border-zinc-800 pb-1.5 md:pb-0 md:pr-3">
           <div className="flex items-center gap-2">
-            <Shield size={13} className="text-[#ffb800]" />
+            <img 
+              src={heroAvatarImg} 
+              alt="Hero Icon" 
+              className="w-5 h-5 object-cover border-2 border-[#ffb800] bg-black shrink-0" 
+              referrerPolicy="no-referrer"
+            />
             <span className="text-[9px] font-press font-bold text-white whitespace-nowrap">LV.{hero.level}</span>
             <span className="text-xs font-press font-black text-[#ffb800] bg-black px-1.5 py-0.5 border border-zinc-700">
               {hero.power}<span className="text-[7px] text-zinc-500 font-normal ml-0.5">P</span>
